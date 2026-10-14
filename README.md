@@ -85,6 +85,19 @@ MLProgram・CPUAndGPU の出力は、CPU の出力と比べて SN 比 約 90dB�
 | CoreML（MLProgram・CPUAndGPU） | 0.64ms |
 | CoreML（MLProgram・CPUOnly） | 1.42ms |
 
+Apple M4（MacBook Pro、GPU 10 コア）でも同じ手順で計測しました。
+
+| 構成 | M1 | M4 |
+|---|---:|---:|
+| すべて CPU | 3.66 秒 | 2.24 秒 |
+| すべて CoreML（オプションなし） | 11.50 秒 | 2.37 秒 |
+| vocoder だけ CoreML（MLProgram・CPUAndGPU） | 0.88 秒 | 0.53 秒 |
+| vocoder 単体・WebGPU（1 フレームあたり） | 1.10ms | 0.53ms |
+| vocoder 単体・CoreML NeuralNetwork（同） | 41.5ms | 0.91ms |
+| vocoder 単体・CoreML MLProgram・CPUAndGPU（同） | 0.64ms | 0.35ms |
+
+M4 ではオプションなし（NeuralNetwork）でも CPU とほぼ同じ速さで、M1 ほど遅くなりませんでした。どちらでも MLProgram・CPUAndGPU の vocoder が最速（CPU の約 4.2 倍）でした。
+
 補足:
 
 - Neural Engine を指定しても速くなりませんでした（CPUOnly と同程度）。

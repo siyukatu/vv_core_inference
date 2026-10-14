@@ -37,6 +37,62 @@ uv run run.py \
   --texts "おはようございます、こんにちは、こんばんは、どうでしょうか"
 ```
 
+## CoreML（macOS）で実行する
+
+`--method=onnx --use_coreml` で、ボコーダー（hifigan の `vocoder.onnx`）だけを CoreML で実行します。
+音素長・抑揚・スペクトログラムは CPU のままです（これらは CoreML で速くならないため）。
+
+```bash
+uv run run.py --yukarin_s_model_dir "model" --yukarin_sa_model_dir "model" --yukarin_sosoa_model_dir "model" --hifigan_model_dir "model" \
+  --speaker_ids 1 2 3 4 5 --method=onnx --use_coreml
+```
+
+- `--devices duration=cpu,intonation=cpu,spectrogram=cpu,vocoder=coreml` のように、処理ごとに device（cpu / cuda / wgpu / coreml）を指定できます。
+- `--coreml_model_format`（既定 `MLProgram`）と `--coreml_compute_units`（既定 `CPUAndGPU`）で CoreML の設定を変えられます。
+
+### CoreML が遅くなっていた理由
+
+onnxruntime の CoreML EP をオプションなしで使うと、`ModelFormat=NeuralNetwork`（古い形式）になります。この形式ではボコーダーが CPU より大幅に遅くなりました。
+`ModelFormat=MLProgram` を指定すると、ボコーダーは CPU の約 4〜5 倍、WebGPU の約 1.7 倍の速さになりました。
+
+また spectrogram（yukarin_sosoa）は、CoreML で実行できない演算が多く（346 ノード中 123、27 分割）、CPU との行き来で遅くなります。
+全体を CoreML にすると遅くなる主な原因はこの 2 点でした。
+
+### 計測結果（Apple M1、8 コア、16GB）
+
+上の例と同じ長い文（約 1,200 フレーム）で、話者 1〜5 の平均（初回を除く）です。onnxruntime 1.23.0（uv.lock のもの）を使いました。
+
+| 構成 | 1 回あたり | CPU との比 |
+|---|---:|---:|
+| すべて CPU | 3.66 秒 | 1.0 倍 |
+| すべて CoreML（オプションなし） | 11.50 秒 | 0.32 倍 |
+| decode（spectrogram + vocoder）だけ CoreML（オプションなし） | 9.43 秒 | 0.39 倍 |
+| vocoder だけ CoreML（オプションなし） | 6.22 秒 | 0.59 倍 |
+| **vocoder だけ CoreML（MLProgram・CPUAndGPU）** | **0.88 秒** | **4.2 倍** |
+| vocoder だけ CoreML（MLProgram・ALL） | 0.89 秒 | 4.1 倍 |
+| vocoder だけ CoreML（MLProgram・CPUOnly） | 1.67 秒 | 2.2 倍 |
+| vocoder だけ CoreML（MLProgram・CPUAndNeuralEngine） | 1.68 秒 | 2.2 倍 |
+
+MLProgram・CPUAndGPU の出力は、CPU の出力と比べて SN 比 約 90dB（ほぼ同一）でした。
+
+ボコーダー単体（1,200 フレーム、onnxruntime-webgpu 1.27.0）:
+
+| 実行方法 | 1 フレームあたり |
+|---|---:|
+| CPU（4 スレッド） | 3.36ms |
+| WebGPU | 1.10ms |
+| CoreML（オプションなし = NeuralNetwork） | 41.5ms |
+| CoreML（MLProgram・CPUAndGPU） | 0.64ms |
+| CoreML（MLProgram・CPUOnly） | 1.42ms |
+
+補足:
+
+- Neural Engine を指定しても速くなりませんでした（CPUOnly と同程度）。
+- 入力の長さを固定する設定（`RequireStaticInputShapes=1`）にすると、onnxruntime が「畳み込みの入力長は 16,384 まで」という制限を確認し、
+  フレーム数 × 256 がこれを超える部分を CPU に回します（64 フレーム超で発生）。長さを固定しない既定の設定では、
+  長い文でもボコーダー全体が CoreML で動きました。
+- 初回の実行時に CoreML 用の変換が行われるため、最初の 1 回は遅くなります。
+
 ## モデルを onnx に変換
 
 - `uv run convert.py --yukarin_s_model_dir "model/yukarin_s" --yukarin_sa_model_dir "model/yukarin_sa" --yukarin_sosoa_model_dir "model/yukarin_sosoa" --hifigan_model_dir "model/hifigan"` で onnx への変換が可能。model フォルダ内の yukarin_s, yukarin_sa, yukarin_sosoa フォルダに onnx が保存される。

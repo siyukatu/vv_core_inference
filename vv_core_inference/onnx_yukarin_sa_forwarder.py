@@ -5,15 +5,11 @@ import numpy as np
 from numpy import ndarray
 import onnxruntime
 
+from vv_core_inference.providers import make_providers
+
 
 def make_yukarin_sa_forwarder(yukarin_sa_model_dir: Path, device, convert=False):
-    providers = ["CPUExecutionProvider"]
-    if device == "cuda":
-        providers.insert(0, "CUDAExecutionProvider")
-    elif device == "wgpu":
-        providers.insert(0, "WebGpuExecutionProvider")
-    elif device == "coreml":
-        providers.insert(0, "CoreMLExecutionProvider")
+    providers = make_providers(device)
     session = onnxruntime.InferenceSession(
         str(yukarin_sa_model_dir.joinpath("intonation.onnx")), providers=providers
     )

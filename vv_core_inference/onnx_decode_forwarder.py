@@ -5,22 +5,27 @@ import numpy as np
 from numpy import ndarray
 import onnxruntime
 
+from vv_core_inference.providers import make_providers
+
 
 def make_decode_forwarder(
-    yukarin_sosoa_model_dir: Path, hifigan_model_dir: Path, device, convert=False
+    yukarin_sosoa_model_dir: Path,
+    hifigan_model_dir: Path,
+    device,
+    convert=False,
+    vocoder_device=None,
 ):
-    providers = ["CPUExecutionProvider"]
-    if device == "cuda":
-        providers.insert(0, "CUDAExecutionProvider")
-    elif device == "wgpu":
-        providers.insert(0, "WebGpuExecutionProvider")
-    elif device == "coreml":
-        providers.insert(0, "CoreMLExecutionProvider")
+    # spectrogram（yukarin_sosoa）と vocoder（hifigan）で別の device を使えるようにする。
+    # CoreML では spectrogram は多くの演算が未対応で分割されて遅くなるため、vocoder だけ CoreML にするとよい
+    if vocoder_device is None:
+        vocoder_device = device
     spectrogram_session = onnxruntime.InferenceSession(
-        str(yukarin_sosoa_model_dir.joinpath("spectrogram.onnx")), providers=providers
+        str(yukarin_sosoa_model_dir.joinpath("spectrogram.onnx")),
+        providers=make_providers(device),
     )
     vocoder_session = onnxruntime.InferenceSession(
-        str(hifigan_model_dir.joinpath("vocoder.onnx")), providers=providers
+        str(hifigan_model_dir.joinpath("vocoder.onnx")),
+        providers=make_providers(vocoder_device),
     )
 
     def _dispatcher(
